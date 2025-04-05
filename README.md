@@ -13,6 +13,17 @@ Key Benefits:
 - Quick context switching without manual tab organization
 - Seamless integration with Firefox's native features
 
+## Current Version
+Version 2.0 (April 2025)
+
+### Latest Improvements (April 2025)
+- **Persistent Tab Management**: New robust tab identifier system ensures tabs maintain their topic assignments across browser restarts and page reloads
+- **Fixed Default Tab Duplication**: Improved handling of default tabs to prevent duplication when switching topics
+- **Tab State Preservation**: Enhanced tab state management preserves your workspaces even when Firefox is closed and reopened
+- **State Management System**: Complete refactoring with central state management for consistent data handling and UI updates
+- **Improved Error Handling**: Enhanced error recovery and user feedback mechanisms
+- **Optimized Performance**: Better resource management for large numbers of tabs and topics
+
 ## Key Features
 
 ### Topic Workspaces
@@ -32,6 +43,7 @@ Key Benefits:
 - Tab search across all topics
 - Tab statistics and usage metrics
 - Auto-cleanup of stale tabs (configurable)
+- Persistent tab identification across browser sessions
 
 ### Bookmark Organization
 - Topic-specific bookmark categories
@@ -80,6 +92,7 @@ Key Benefits:
    - Action creators for state modifications
    - Selectors for efficient state querying
    - Middleware for side effects (storage, logging)
+   - Automatic state persistence
 
 2. **Data Models**
    - Topic: Base organizational unit containing categories
@@ -93,6 +106,7 @@ Key Benefits:
    - CategoryService: Category management
    - BookmarkService: Bookmark operations
    - ErrorService: Error handling and notifications
+   - TabIdentifier: Persistent tab identification system
 
 4. **UI Management**
    - StateTopicManager: Topic list and selection
@@ -121,11 +135,12 @@ Key Benefits:
 
 ### Implementation Requirements
 1. **Tab Management**
-   - Maintain tab-to-topic mapping
+   - Maintain tab-to-topic mapping with persistent identifiers
    - Handle tab lifecycle events
    - Control tab visibility
    - Auto-assign new tabs
    - Handle browser restarts
+   - Preserve tab assignments across sessions
 
 2. **State Flow**
    - User action triggers
@@ -149,7 +164,8 @@ Key Benefits:
    - Extension lifecycle
 
 ### Development Guidelines
-   - ES6 modules througout
+1. **Code Organization**
+   - ES6 modules throughout
    - Clear separation of concerns
    - Pure functions for state updates
    - Isolated side effects
@@ -205,80 +221,88 @@ Key Benefits:
 /
 ├── background/
 │   ├── background.js           # Extension background script entry point
-│   │   └── initializeBackgroundProcesses()
-│   │   └── handleMessages()
 │   ├── background.html         # HTML wrapper for ES6 module support
-│   └── messages/
-│       ├── types.js           # Message type definitions
-│       ├── handlers.js        # Message handler implementations
-│       └── router.js         # Message routing logic
-├── components/
-│   ├── base/
-│   │   ├── component.js      # Base component class
-│   │   └── store-aware.js    # Store subscription mixin
-│   ├── topic-list/
-│   ├── category-list/
-│   └── bookmark-list/
+│   └── messages.js             # Message handling between components
 ├── models/
-│   ├── base-model.js        # Base model with validation
-│   ├── topic.js            # Topic model definition
-│   ├── category.js         # Category model definition
-│   └── bookmark.js         # Bookmark model definition
-└── services/
-    ├── base-service.js     # Base service functionality
-    └── implementations/    # Service implementations
+│   ├── topic.js                # Topic model definition
+│   ├── category.js             # Category model definition
+│   └── bookmark.js             # Bookmark model definition
+├── modals/
+│   ├── add-topic/              # Topic creation modal
+│   └── category-sets/          # Category templates modal
+├── popup/
+│   ├── popup.html              # Extension popup
+│   └── popup.js                # Popup functionality
+├── services/
+│   ├── error/                  # Error handling services
+│   ├── storage-service.js      # Storage abstraction
+│   ├── topic-service.js        # Topic operations
+│   ├── category-service.js     # Category operations
+│   └── bookmark-service.js     # Bookmark operations
+├── sidebar/
+│   ├── js/                     # Sidebar JavaScript
+│   ├── sidebar.css             # Sidebar styling
+│   └── state-sidebar.html      # Main sidebar UI
+├── state/
+│   ├── reducers/               # State reducers
+│   ├── actions.js              # Action creators
+│   ├── store.js                # Central state store
+│   └── selectors.js            # State query functions
+└── utils/
+    ├── common.js               # Shared utilities
+    ├── dom-utils.js            # DOM manipulation helpers
+    └── tab-identifier.js       # Persistent tab identification
 ```
 
-### Call Graph & Dependencies
+### Key Class Relationships
 
-1. **Initialization Flow**
+1. **Store Integration**
 ```
-background.js
-└── initializeBackgroundProcesses
-    ├── StorageService.init()
-    ├── StateManager.init()
-    │   └── Store.create()
-    └── TabManager.init()
-        └── browser.tabs.onCreated.addListener()
+Store <── StateAwareComponent
+     └── ServiceBase
+          ├── TopicService
+          ├── CategoryService
+          └── BookmarkService
 ```
 
-2. **Topic Management Flow**
+2. **UI Component Hierarchy**
 ```
-TopicManager
-├── handleTopicCreate
-│   ├── TopicService.create()
-│   │   ├── Store.dispatch(CREATE_TOPIC)
-│   │   └── StorageService.save()
-│   └── UIManager.update()
-└── handleTopicSelect
-    ├── Store.dispatch(SET_ACTIVE_TOPIC)
-    └── TabManager.handleTopicChange()
-```
-
-3. **Tab Management Flow**
-```
-TabManager
-├── handleTabCreate
-│   ├── Store.getState()
-│   └── TabService.assignToTopic()
-├── handleTabRemove
-│   └── Store.dispatch(REMOVE_TAB)
-└── handleTopicChange
-    ├── TabService.getTopicTabs()
-    └── browser.tabs.hide/show()
+Component
+├── StateAwareComponent
+│   ├── TopicList
+│   ├── CategoryList
+│   └── BookmarkList
+└── ModalComponent
+    ├── AddTopicModal
+    └── CategorySetModal
 ```
 
-4. **State Update Flow**
+3. **Service Dependencies**
 ```
-Store
-├── dispatch(action)
-│   ├── middleware.process()
-│   │   ├── logMiddleware
-│   │   ├── storageMiddleware
-│   │   └── errorMiddleware
-│   └── reducer(state, action)
-└── notify(newState)
-    └── subscribers.forEach(callback)
+ServiceBase
+├── StorageService
+│   └── browser.storage
+├── ErrorService
+│   └── NotificationManager
+└── TabService
+    └── browser.tabs
+```
+
+### State Update Sequence
+
+1. **User Action Flow**
+```
+UI Event → Action Creator → Middleware → Reducer → State Update → UI Update
+```
+
+2. **Background Process Flow**
+```
+Browser Event → Message Handler → Service → Store → State Update → UI Update
+```
+
+3. **Storage Sync Flow**
+```
+State Update → Storage Middleware → Storage Service → Browser Storage → Sync Event
 ```
 
 ## Bookmark Management
@@ -338,26 +362,7 @@ interface StorageData {
 }
 ```
 
-3. **Sync Operations**
-   - Automatic background sync
-   - Manual sync trigger
-   - Conflict resolution
-   - Merge strategies
-   - Version control
-
-4. **Data Migration**
-   - Version upgrade paths
-   - Schema validation
-   - Data repair
-   - Backup creation
-
-5. **Storage Limits**
-   - Chrome sync quota (102,400 bytes)
-   - Local storage sizing
-   - Compression strategies
-   - Chunked storage
-
-### Persistence Flow
+## Persistence Flow
 
 1. **Save Operations**
 ```
@@ -379,7 +384,7 @@ Storage Change → Sync Detection → Conflict Resolution → State Update → U
 File Selection → Parse/Format → Validation → Storage Update → State Sync
 ```
 
-### Error Recovery
+## Error Handling
 
 1. **Storage Failures**
    - Retry mechanisms
@@ -399,123 +404,18 @@ File Selection → Parse/Format → Validation → Storage Update → State Sync
    - Priority-based retention
    - User warnings
 
-### Integration Points
+## Future Development
 
-1. **Browser Bookmarks**
-   - Import from browser
-   - Export to browser
-   - Sync with browser
-   - Watch for changes
+1. **Phase 3: Performance & Extensibility**
+   - Code-splitting for better startup times
+   - Advanced caching strategies
+   - Enhanced search and filter functions
+   - Comprehensive testing suite
+   - Complete API documentation
 
-2. **External Systems**
-   - Browser sync
-   - Cloud backup
-   - External services
-   - Browser profiles
-
-### Key Class Relationships
-
-1. **Store Integration**
-```
-Store <── StateAwareComponent
-     └── ServiceBase
-          ├── TopicService
-          ├── CategoryService
-          └── BookmarkService
-```
-
-2. **UI Component Hierarchy**
-```
-Component
-├── StateAwareComponent
-│   ├── TopicList
-│   ├── CategoryList
-│   └── BookmarkList
-└── ModalComponent
-    ├── AddTopicModal
-    └── CategorySetModal
-```
-
-3. **Service Dependencies**
-```
-ServiceBase
-├── StorageService
-│   └── browser.storage
-├── ErrorService
-│   └── NotificationManager
-└── TabService
-    └── browser.tabs
-```
-
-### State Update Sequence
-
-1. **User Action Flow**
-```
-UI Event → Action Creator → Middleware → Reducer → State Update → UI Update
-```
-
-2. **Background Process Flow**
-```
-Browser Event → Message Handler → Service → Store → State Update → UI Update
-```
-
-3. **Storage Sync Flow**
-```
-State Update → Storage Middleware → Storage Service → Browser Storage → Sync Event
-```
-
-### Error Handling Paths
-
-1. **UI Error Flow**
-```
-Component → ErrorService → NotificationManager → UI Alert
-```
-
-2. **Service Error Flow**
-```
-Service → ErrorService → Store → Error State → UI Update
-```
-
-3. **Browser API Error Flow**
-```
-Browser API → Error Handler → ErrorService → Recovery Action
-```
-
-### Data Flow Patterns
-
-1. **Topic Creation**
-```
-AddTopicModal → TopicService → Store → StorageService → UI Update
-```
-
-2. **Tab Assignment**
-```
-Browser Tab Event → TabManager → Store → UIUpdate → TabVisibilityChange
-```
-
-3. **Bookmark Management**
-```
-BookmarkComponent → BookmarkService → Store → StorageService → UI Update
-```
-
-## Development Workflow
-1. **Feature Implementation**
-   - Create/Update models
-   - Implement services
-   - Add state management
-   - Create UI components
-   - Add error handling
-
-2. **Testing Points**
-   - Model validation
-   - State transitions
-   - Browser API integration
-   - UI interaction flows
-   - Error recovery paths
-
-3. **Extension Points**
-   - New topic features
-   - Additional UI components
-   - Custom category types
-   - Enhanced tab management
-   - Data import/export formats
+2. **Future Roadmap**
+   - Cross-browser synchronization
+   - Advanced tagging system
+   - Offline support
+   - Usage statistics and analytics
+   - AI-assisted organization
