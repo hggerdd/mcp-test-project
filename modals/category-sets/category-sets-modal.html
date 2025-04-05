@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f5f5f5;
+      margin: 0;
+      padding: 20px;
+    }
+    
+    .container {
+      background-color: white;
+      border-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      padding: 20px;
+      max-width: 460px;
+      margin: 0 auto;
+    }
+    
+    h2 {
+      margin-top: 0;
+      margin-bottom: 20px;
+      color: #333;
+      font-size: 20px;
+    }
+    
+    .sets-container {
+      max-height: 400px;
+      overflow-y: auto;
+      margin-bottom: 20px;
+    }
+    
+    .set-item {
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      margin-bottom: 20px;
+    }
+    
+    .set-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    
+    .set-title {
+      font-weight: bold;
+      font-size: 16px;
+    }
+    
+    .set-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    
+    .categories-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    
+    .category-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .category-actions {
+      display: flex;
+      gap: 5px;
+    }
+    
+    .edit-form {
+      display: flex;
+      align-items: center;
+      margin-top: 10px;
+      gap: 5px;
+    }
+    
+    .edit-form input {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    
+    .hidden {
+      display: none;
+    }
+    
+    button {
+      padding: 6px 10px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    
+    .primary-btn {
+      background-color: #4CAF50;
+      color: white;
+    }
+    
+    .secondary-btn {
+      background-color: #2196F3;
+      color: white;
+    }
+    
+    .danger-btn {
+      background-color: #f44336;
+      color: white;
+    }
+    
+    .icon-btn {
+      background: none;
+      border: none;
+      padding: 3px 6px;
+      font-size: 14px;
+      cursor: pointer;
+      color: #555;
+    }
+    
+    .icon-btn:hover {
+      color: #000;
+    }
+    
+    .add-set-form {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 5px;
+    }
+    
+    .add-set-form input {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    
+    .footer {
+      text-align: right;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Manage Category Sets</h2>
+    
+    <div id="add-set-form" class="add-set-form hidden">
+      <input type="text" id="new-set-input" placeholder="New set name...">
+      <button id="save-new-set-btn" class="primary-btn">Save</button>
+      <button id="cancel-new-set-btn" class="danger-btn">Cancel</button>
+    </div>
+    
+    <button id="add-set-btn" class="primary-btn">
+      <i class="fas fa-plus"></i> Add Category Set
+    </button>
+    
+    <div class="sets-container">
+      <!-- Category sets will be added here dynamically -->
+    </div>
+    
+    <div class="footer">
+      <button id="close-btn" class="secondary-btn">Close</button>
+    </div>
+  </div>
+  
+  <script type="module" src="category-sets-modal.js"></script>
+</body>
+</html>

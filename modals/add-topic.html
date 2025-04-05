@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    html {
+      background-color: #222;
+    }
+    body {
+      background-color: #222;
+      color: white;
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      min-width: 300px;
+    }
+
+    .modal-header {
+      margin-bottom: 16px;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 16px;
+      color: #fff;
+    }
+
+    .modal-form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .modal-form label {
+      color: #aaa;
+      font-size: 12px;
+    }
+
+    .modal-form input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      background-color: #333;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: white;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    .modal-form input[type="text"]:focus {
+      border-color: #4CAF50;
+      outline: none;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background-color 0.2s;
+    }
+
+    .primary-btn {
+      background-color: #4CAF50;
+      color: white;
+    }
+
+    .primary-btn:hover {
+      background-color: #45a049;
+    }
+
+    .secondary-btn {
+      background-color: #444;
+      color: white;
+    }
+
+    .secondary-btn:hover {
+      background-color: #555;
+    }
+
+    .category-options {
+      margin-top: 16px;
+      margin-bottom: 16px;
+    }
+
+    .checkbox-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .checkbox-container input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+
+    .checkbox-container label {
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .category-set-select {
+      width: 100%;
+      padding: 8px;
+      background-color: #333;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: white;
+      font-size: 14px;
+      margin-bottom: 8px;
+      display: none;
+    }
+
+    .category-set-select.visible {
+      display: block;
+    }
+
+    .category-set-select option {
+      background-color: #333;
+      color: white;
+      padding: 4px;
+    }
+
+    .category-set-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .manage-sets-btn {
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .manage-sets-btn i {
+      font-size: 12px;
+    }
+
+    .manage-sets-btn:hover {
+      background-color: #1976D2;
+    }
+  </style>
+</head>
+<body>
+  <div class="modal-header">
+    <h3>Add New Topic</h3>
+  </div>
+  <div class="modal-form">
+    <label for="topic-input">Topic Name</label>
+    <input type="text" id="topic-input" placeholder="Enter new topic name..." autofocus>
+    
+    <div class="category-options">
+      <div class="checkbox-container">
+        <input type="checkbox" id="add-standard-categories" name="add-standard-categories">
+        <label for="add-standard-categories">Add standard categories</label>
+      </div>
+      <div class="category-set-controls">
+        <select id="category-set-select" class="category-set-select">
+          <option value="standard">Standard Set (Files, Notes, Links)</option>
+        </select>
+        <button id="manage-sets-btn" class="manage-sets-btn" title="Manage Category Sets">
+          <i class="fas fa-cog"></i> Manage Sets
+        </button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button id="save-btn" class="primary-btn">OK</button>
+    <button id="cancel-btn" class="secondary-btn">Cancel</button>
+  </div>
+  <script src="add-topic.js"></script>
+</body>
+</html>

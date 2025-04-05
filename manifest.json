@@ -1,0 +1,67 @@
+{
+    "manifest_version": 2,
+    "name": "Simple Topics",
+    "version": "2.0",
+    "description": "Simple Topics is tab and bookmark management based on topics. Only show the open tabs and bookmarks that belong to one topic.",
+    "icons": {
+      "48": "icons/icon-48.png"
+    },
+    "browser_action": {
+      "default_icon": "icons/icon-32.png",
+      "default_title": "Simple topics",
+      "default_popup": "popup/popup.html"
+    },
+    "commands": {
+      "_execute_sidebar_action": {
+        "suggested_key": {
+          "default": "Ctrl+Shift+S"
+        },
+        "description": "Öffne die Sidebar"
+      }
+    },
+    "sidebar_action": {
+      "default_title": "Simple Topics",
+      "default_panel": "sidebar/state-sidebar.html",
+      "default_icon": "icons/icon-32.png"
+    },
+    "permissions": [
+      "storage",
+      "tabs",
+      "tabHide",
+      "sessions"
+    ],
+    "background": {
+      "page": "background/background.html"
+    },
+    "web_accessible_resources": [
+      "modals/add-topic/add-topic.html",
+      "modals/category-sets/category-sets-modal.html",
+      "modals/category-sets/category-sets-modal.js",
+      "utils/common.js",
+      "utils/dom-utils.js",
+      "services/storage-service.js",
+      "services/topic-service.js",
+      "services/category-service.js",
+      "services/bookmark-service.js",
+      "services/error/error-service.js",
+      "services/error/error-types.js",
+      "models/topic.js",
+      "models/category.js",
+      "models/bookmark.js",
+      "background/messages.js",
+      "state/store.js",
+      "state/topics-reducer.js",
+      "state/categories-reducer.js",
+      "state/bookmarks-reducer.js",
+      "state/category-sets-reducer.js",
+      "state/ui-reducer.js",
+      "state/storage-middleware.js",
+      "state/logging-middleware.js",
+      "state/actions.js",
+      "state/selectors.js",
+      "state/index.js",
+      "sidebar/js/state/topic-manager.js",
+      "sidebar/js/state/category-manager.js",
+      "sidebar/js/state/bookmark-manager.js"
+    ]
+}
