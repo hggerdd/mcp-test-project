@@ -139,7 +139,7 @@ export class StateBookmarkManager {
             data-id="${bookmark.id}" 
             data-index="${index}">
           <div class="bookmark-info">
-            <img src="${faviconUrl}" class="favicon" onerror="this.src='${this.getDefaultFavicon()}'">
+            <img src="${faviconUrl}" class="favicon" data-default-src="${this.getDefaultFavicon()}">
             <a href="${this.escapeHTML(bookmark.url)}" target="_blank" class="bookmark-link">
               ${this.escapeHTML(bookmark.title)}
             </a>
@@ -189,8 +189,22 @@ export class StateBookmarkManager {
    * Attach event listeners to bookmark elements
    */
   attachEventListeners(bookmarks) {
-    const bookmarkItems = document.querySelectorAll('#bookmark-links .bookmark-item');
-    
+    const bookmarksList = document.getElementById('bookmark-links');
+    if (!bookmarksList) return;
+
+    // Handle favicon errors
+    const favicons = bookmarksList.querySelectorAll('.favicon');
+    favicons.forEach(img => {
+      img.addEventListener('error', () => {
+        const defaultSrc = img.getAttribute('data-default-src');
+        if (defaultSrc) {
+          img.src = defaultSrc;
+        }
+      });
+    });
+
+    // Handle bookmark actions
+    const bookmarkItems = bookmarksList.querySelectorAll('.bookmark-item');
     bookmarkItems.forEach((item) => {
       const bookmarkId = item.dataset.id;
       const index = parseInt(item.dataset.index, 10);
