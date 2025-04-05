@@ -135,15 +135,13 @@ export class StateBookmarkManager {
       const faviconUrl = bookmark.favicon || this.getFaviconUrl(bookmark.url);
       
       return `
-        <li class="bookmark-item" 
-            data-id="${bookmark.id}" 
-            data-index="${index}">
-          <div class="bookmark-info">
-            <img src="${faviconUrl}" class="favicon" data-default-src="${this.getDefaultFavicon()}">
-            <a href="${this.escapeHTML(bookmark.url)}" target="_blank" class="bookmark-link">
-              ${this.escapeHTML(bookmark.title)}
-            </a>
-          </div>
+        <li class="bookmark-item" data-id="${bookmark.id}" data-index="${index}">
+          <a href="${this.escapeHTML(bookmark.url)}" target="_blank" class="bookmark-link">
+            <div class="bookmark-info">
+              <img src="${faviconUrl}" class="favicon" data-default-src="${this.getDefaultFavicon()}">
+              <span>${this.escapeHTML(bookmark.title)}</span>
+            </div>
+          </a>
           <div class="bookmark-actions">
             <button class="edit-btn" title="Edit Bookmark">
               <i class="fas fa-edit"></i>
