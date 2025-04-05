@@ -211,6 +211,20 @@ export class StateTabManager {
       // Verify the results
       await this.verifyTabVisibility(activeTopicId);
       
+      // Notify that tab visibility has changed
+      if (tabsToShow.length > 0 || tabsToHide.length > 0) {
+        try {
+          browser.runtime.sendMessage({ 
+            type: 'tabVisibilityChanged',
+            activeTopicId,
+            tabsShown: tabsToShow.length,
+            tabsHidden: tabsToHide.length
+          });
+        } catch (error) {
+          this.log(`[WARNING] Could not send tab visibility change message: ${error.message}`);
+        }
+      }
+      
     } catch (e) {
       this.log(`[ERROR] enforceTabVisibility failed: ${e.message}`);
       showNotification('Error enforcing tab visibility', 'error');
@@ -294,6 +308,18 @@ export class StateTabManager {
       // Verify final state
       await this.verifyTabVisibility(newTopicId);
       
+      // Notify that topic tabs have changed
+      try {
+        browser.runtime.sendMessage({ 
+          type: 'topicChanged',
+          topicId: newTopicId,
+          tabsShown: tabsToShow.length,
+          tabsHidden: tabsToHide.length
+        });
+      } catch (error) {
+        this.log(`[WARNING] Could not send topic change message: ${error.message}`);
+      }
+      
       return true;
     } catch (e) {
       this.log(`[ERROR] handleTopicChange failed: ${e.message}`);
@@ -361,6 +387,7 @@ export class StateTabManager {
       // Find all tabs for this topic
       const allTabs = await browser.tabs.query({});
       const tabsToClose = [];
+      const stableIdsToRemove = [];
       
       for (const tab of allTabs) {
         if (!this.isRegularTab(tab.url)) continue;
@@ -368,14 +395,34 @@ export class StateTabManager {
         const stableId = await this.tabIdentifier.getStableTabId(tab);
         if (this.stableIdToTopicMap.get(stableId) === topicId) {
           tabsToClose.push(tab.id);
+          stableIdsToRemove.push(stableId);
         }
       }
       
       if (tabsToClose.length > 0) {
         this.log(`Closing ${tabsToClose.length} tabs for topic ${topicId}`);
+        
+        // Remove topic assignments for these tabs
+        for (const stableId of stableIdsToRemove) {
+          this.stableIdToTopicMap.delete(stableId);
+        }
+        
+        // Persist assignments before closing tabs
+        await this.persistTabAssignments();
+        
+        // Close the tabs
         await browser.tabs.remove(tabsToClose);
         
-        // Clean up stableIdToTopicMap (done in the tab removal listener)
+        // Notify that tabs were removed for this topic
+        try {
+          browser.runtime.sendMessage({ 
+            type: 'topicTabsClosed',
+            topicId,
+            tabCount: tabsToClose.length
+          });
+        } catch (error) {
+          this.log(`[WARNING] Could not send topic tabs closed message: ${error.message}`);
+        }
       }
       
       return true;
@@ -410,6 +457,18 @@ export class StateTabManager {
         
         // Persist the assignments
         await this.persistTabAssignments();
+        
+        // Notify about the new tab assignment
+        try {
+          browser.runtime.sendMessage({ 
+            type: 'tabAssigned',
+            tabId: tab.id,
+            stableId,
+            topicId: activeTopicId
+          });
+        } catch (error) {
+          this.log(`[WARNING] Could not send tab assignment message: ${error.message}`);
+        }
         
         // Enforce visibility to ensure it matches topic
         await this.enforceTabVisibility(activeTopicId);
@@ -619,6 +678,14 @@ export class StateTabManager {
       const assignments = Object.fromEntries(this.stableIdToTopicMap);
       await browser.storage.local.set({ tabAssignments: assignments });
       this.log('Tab assignments persisted to storage');
+      
+      // Send a message to notify other components that tab assignments have changed
+      try {
+        browser.runtime.sendMessage({ type: 'tabAssignmentsChanged' });
+      } catch (error) {
+        this.log(`[WARNING] Could not send tab assignments change message: ${error.message}`);
+      }
+      
       return true;
     } catch (e) {
       this.log(`[ERROR] Failed to persist tab assignments: ${e.message}`);

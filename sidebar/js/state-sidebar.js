@@ -141,6 +141,9 @@ function setupCoordination() {
   topicManager.renderTopics();
   categoryManager.renderCategories();
   bookmarkManager.renderBookmarks();
+  
+  // Connect topic manager and tab manager for more accurate tab counting
+  topicManager.setTabManager(tabManager);
 }
 
 /**
