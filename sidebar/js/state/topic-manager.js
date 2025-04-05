@@ -398,11 +398,11 @@ export class StateTopicManager {
     browser.windows.create({
       url: modalUrl,
       type: 'popup',
-      width: 400,
-      height: 300,
+      width: 500,  // Increased from 400
+      height: 400, // Increased from 300
       allowScriptsToClose: true,
-      left: screen.width / 2 - 200,
-      top: screen.height / 2 - 150
+      left: screen.width / 2 - 250,  // Adjusted for new width
+      top: screen.height / 2 - 200   // Adjusted for new height
     }).catch(err => {
       console.error('Error opening modal:', err);
       showNotification('Failed to open add topic dialog', 'error');
