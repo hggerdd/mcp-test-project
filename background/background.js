@@ -20,6 +20,7 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     switch (message.type) {
       case MessageTypes.ADD_TOPIC_RESPONSE:
         // Forward the complete message structure to sidebar
+        console.log('Forwarding ADD_TOPIC_RESPONSE with category set:', message.categorySet);
         return browser.runtime.sendMessage({
           type: MessageTypes.MODAL_RESPONSE,
           success: message.success,

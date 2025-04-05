@@ -62,18 +62,36 @@ export class TabIdentifier {
       return this.metadataCache.get(tab.id);
     }
 
-    const metadata = {
-      urlPattern: this.getNormalizedUrlPattern(tab.url),
-      domain: this.extractDomain(tab.url),
-      title: tab.title || '',
-      faviconUrl: tab.favIconUrl || '',
-      domFingerprint: await this.extractDomFingerprint(tab)
-    };
+    try {
+      const metadata = {
+        urlPattern: this.getNormalizedUrlPattern(tab.url),
+        domain: this.extractDomain(tab.url),
+        title: tab.title || '',
+        faviconUrl: tab.favIconUrl || '',
+        domFingerprint: await this.extractDomFingerprint(tab)
+      };
 
-    // Cache the metadata
-    this.metadataCache.set(tab.id, metadata);
-    
-    return metadata;
+      // Cache the metadata
+      this.metadataCache.set(tab.id, metadata);
+      
+      return metadata;
+    } catch (error) {
+      console.error(`[TabIdentifier] Error getting tab metadata for tab ${tab.id}:`, error);
+      
+      // Create a basic metadata object that doesn't rely on DOM fingerprinting
+      const fallbackMetadata = {
+        urlPattern: this.getNormalizedUrlPattern(tab.url),
+        domain: this.extractDomain(tab.url),
+        title: tab.title || '',
+        faviconUrl: tab.favIconUrl || '',
+        domFingerprint: this.hashString(`fallback-fingerprint|${tab.url}|${tab.title}`)
+      };
+      
+      // Cache the fallback metadata
+      this.metadataCache.set(tab.id, fallbackMetadata);
+      
+      return fallbackMetadata;
+    }
   }
 
   /**
@@ -258,38 +276,53 @@ export class TabIdentifier {
    */
   async extractDomFingerprint(tab) {
     try {
+      // Check if the tab's URL is accessible to content scripts
+      if (!tab.url || tab.url.startsWith('about:') || 
+          tab.url.startsWith('moz-extension:') || 
+          tab.url.startsWith('chrome:') || 
+          tab.url.startsWith('resource:') ||
+          tab.url.startsWith('file:') ||
+          tab.url.startsWith('view-source:')) {
+        // These are restricted URLs, don't try to execute script
+        return this.hashString(tab.url + '|' + tab.title);
+      }
+      
       // Execute script in the tab to get DOM structure
       const result = await browser.tabs.executeScript(tab.id, {
         code: `
           (function() {
-            // Get key DOM elements that identify the page structure
-            const fingerprint = {
-              // Page title
-              title: document.title,
+            try {
+              // Get key DOM elements that identify the page structure
+              const fingerprint = {
+                // Page title
+                title: document.title,
+                
+                // Meta tags (description, keywords)
+                meta: Array.from(document.querySelectorAll('meta[name="description"], meta[name="keywords"]'))
+                  .map(el => ({ name: el.getAttribute('name'), content: el.getAttribute('content') })),
+                
+                // Main heading structure
+                headings: Array.from(document.querySelectorAll('h1')).map(h => h.textContent.trim()),
+                
+                // Main structural elements
+                mainStructure: [
+                  // Count main structural elements
+                  document.querySelectorAll('header').length,
+                  document.querySelectorAll('footer').length,
+                  document.querySelectorAll('nav').length, 
+                  document.querySelectorAll('main').length,
+                  document.querySelectorAll('article').length
+                ],
+                
+                // Page-specific identifiers (common IDs)
+                pageIds: Array.from(document.querySelectorAll('[id="content"], [id="main"], [id="app"], [id="root"]'))
+                  .map(el => el.id)
+              };
               
-              // Meta tags (description, keywords)
-              meta: Array.from(document.querySelectorAll('meta[name="description"], meta[name="keywords"]'))
-                .map(el => ({ name: el.getAttribute('name'), content: el.getAttribute('content') })),
-              
-              // Main heading structure
-              headings: Array.from(document.querySelectorAll('h1')).map(h => h.textContent.trim()),
-              
-              // Main structural elements
-              mainStructure: [
-                // Count main structural elements
-                document.querySelectorAll('header').length,
-                document.querySelectorAll('footer').length,
-                document.querySelectorAll('nav').length, 
-                document.querySelectorAll('main').length,
-                document.querySelectorAll('article').length
-              ],
-              
-              // Page-specific identifiers (common IDs)
-              pageIds: Array.from(document.querySelectorAll('[id="content"], [id="main"], [id="app"], [id="root"]'))
-                .map(el => el.id)
-            };
-            
-            return JSON.stringify(fingerprint);
+              return JSON.stringify(fingerprint);
+            } catch (err) {
+              return JSON.stringify({ error: err.message, title: document.title });
+            }
           })();
         `
       });
@@ -299,11 +332,18 @@ export class TabIdentifier {
         return this.hashString(result[0]);
       }
     } catch (error) {
-      // Silent fail - DOM fingerprinting is optional
+      // For permission errors, use a fallback identifier based on tab properties
+      if (error.message && error.message.includes("Missing host permission")) {
+        console.warn(`[TabIdentifier] Permission issue for tab ${tab.id}. Using fallback identification.`);
+        return this.hashString(`restricted-tab|${tab.url}|${tab.title}`);
+      }
+      
+      // For other errors, just log and continue
       console.debug(`[TabIdentifier] Could not extract DOM fingerprint for tab ${tab.id}:`, error);
     }
     
-    return ''; // Return empty string if extraction fails
+    // Create a basic fingerprint from URL and title
+    return this.hashString(`basic|${tab.url}|${tab.title}`);
   }
 
   /**

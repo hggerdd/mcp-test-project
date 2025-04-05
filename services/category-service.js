@@ -252,7 +252,7 @@ export class CategoryService {
    * @returns {Promise<void>}
    */
   async updateCategorySets(categorySets) {
-    store.dispatch(actions.updateCategorySets(categorySets));
+    store.dispatch(actions.setCategorySets({ categorySets }));
   }
 }
 

@@ -642,13 +642,14 @@ export class StateTabManager {
       return false;
     }
   }
-}  /**
-   * Get all tabs for a specific topic
-   * 
-   * @param {string} topicId - Topic ID to get tabs for
-   * @returns {Promise<Array>} - Array of tab objects for the topic
-   */
-  async getTabsForTopic(topicId) {
+
+/**
+ * Get all tabs for a specific topic
+ * 
+ * @param {string} topicId - Topic ID to get tabs for
+ * @returns {Promise<Array>} - Array of tab objects for the topic
+ */
+async getTabsForTopic(topicId) {
     try {
       const allTabs = await browser.tabs.query({});
       const topicTabs = [];
@@ -669,3 +670,4 @@ export class StateTabManager {
       return [];
     }
   }
+}

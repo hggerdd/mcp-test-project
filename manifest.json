@@ -28,7 +28,8 @@
       "storage",
       "tabs",
       "tabHide",
-      "sessions"
+      "sessions",
+      "<all_urls>"
     ],
     "background": {
       "page": "background/background.html"

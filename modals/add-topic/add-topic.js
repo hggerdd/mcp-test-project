@@ -28,6 +28,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function loadCategorySets() {
     try {
       categorySets = await categoryService.getCategorySets();
+      
+      // If no category sets exist, create a default one
+      if (Object.keys(categorySets).length === 0) {
+        console.log('No category sets found, creating default set');
+        const defaultSet = {
+          id: 'default',
+          name: 'Default Set',
+          categories: ['General', 'Work', 'Personal'],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+        
+        categorySets = { default: defaultSet };
+        await categoryService.updateCategorySets(categorySets);
+      }
+      
       updateCategorySetSelect();
     } catch (err) {
       console.error('Error loading category sets:', err);
@@ -49,6 +65,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   addStandardCategoriesCheckbox.addEventListener('change', (e) => {
     categorySetSelect.style.display = e.target.checked ? 'block' : 'none';
   });
+  
+  // Initialize checkbox state
+  addStandardCategoriesCheckbox.checked = true;
+  categorySetSelect.style.display = 'block';
 
   /**
    * Open category sets management modal
@@ -94,10 +114,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Get selected category set if checkbox is checked
       if (addStandardCategoriesCheckbox.checked) {
         const selectedSetId = categorySetSelect.value;
+        console.log('Selected category set ID:', selectedSetId);
+        console.log('Available category sets:', categorySets);
+        
         if (selectedSetId && categorySets[selectedSetId]) {
           categorySet = {
+            id: selectedSetId,
             list_of_categories: [...categorySets[selectedSetId].categories]
           };
+          console.log('Using category set:', categorySet);
         }
       }
 
