@@ -87,12 +87,13 @@ Version 2.0 (April 2025)
 ## System Architecture
 ### Core Components
 1. **State Management**
-   - Central store following Redux patterns
-   - Pure reducers for state updates
-   - Action creators for state modifications
-   - Selectors for efficient state querying
-   - Middleware for side effects (storage, logging)
+   - Central store (`store.js`) following Redux patterns
+   - Pure reducers for state updates (separate reducer files for each domain)
+   - Action creators for state modifications (`actions.js`)
+   - Selectors for efficient state querying (`selectors.js`)
+   - Middleware for side effects (`storage-middleware.js`, `logging-middleware.js`)
    - Automatic state persistence
+   - Central export through `index.js`
 
 2. **Data Models**
    - Topic: Base organizational unit containing categories
@@ -216,6 +217,13 @@ Version 2.0 (April 2025)
 
 ## Program Structure Details
 
+### Additional Project Files
+```
+/
+├── index.js                    # Central exports file for simplified importing
+└── manifest.json               # Extension manifest with permissions and metadata
+```
+
 ### Detailed Directory Structure
 ```
 /
@@ -244,10 +252,17 @@ Version 2.0 (April 2025)
 │   ├── sidebar.css             # Sidebar styling
 │   └── state-sidebar.html      # Main sidebar UI
 ├── state/
-│   ├── reducers/               # State reducers
+│   ├── bookmarks-reducer.js    # Bookmark state reducer
+│   ├── categories-reducer.js   # Category state reducer
+│   ├── category-sets-reducer.js # Category sets reducer
+│   ├── topics-reducer.js       # Topics state reducer
+│   ├── ui-reducer.js           # UI state reducer
 │   ├── actions.js              # Action creators
 │   ├── store.js                # Central state store
-│   └── selectors.js            # State query functions
+│   ├── selectors.js            # State query functions
+│   ├── storage-middleware.js   # Storage middleware
+│   ├── logging-middleware.js   # Logging middleware
+│   └── index.js                # Central state management export
 └── utils/
     ├── common.js               # Shared utilities
     ├── dom-utils.js            # DOM manipulation helpers

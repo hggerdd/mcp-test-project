@@ -23,7 +23,7 @@ store.registerReducer('categorySets', categorySetsReducer);
 store.registerReducer('uiState', uiStateReducer);
 
 // Register middlewares
-const isDebug = true; // Set to true for development, false for production
+const isDebug = false; // Set to true for development, false for production
 store.addMiddleware(createLoggingMiddleware({ 
   logActions: isDebug,
   logState: isDebug
