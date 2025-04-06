@@ -30,6 +30,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function loadCategorySets() {
     try {
       categorySets = await categoryService.getCategorySets();
+      
+      // Add a default category set if none exist
+      if (Object.keys(categorySets).length === 0) {
+        const defaultSet = {
+          id: 'default',
+          name: 'Default Set',
+          categories: ['General', 'Work', 'Personal'],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+        
+        categorySets = { default: defaultSet };
+        await saveCategorySets();
+      }
+      
       renderSets();
     } catch (err) {
       console.error('Error loading category sets:', err);

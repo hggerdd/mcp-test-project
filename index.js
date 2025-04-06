@@ -54,3 +54,6 @@ export {
   selectors,
   actions
 } from './state/index.js';
+
+// Tab Management
+export { TabIdentifier } from './utils/tab-identifier.js';

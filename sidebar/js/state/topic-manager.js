@@ -12,6 +12,7 @@ import {
   TopicService,
   showNotification
 } from '../../../index.js';
+import { TabIdentifier } from '../../../utils/tab-identifier.js';
 
 export class StateTopicManager {
   constructor(elements) {
@@ -27,6 +28,8 @@ export class StateTopicManager {
       draggedIndex: -1,
       dropTarget: null
     };
+    this.tabCountMap = new Map(); // Map to store tab counts by topic ID
+    this.tabIdentifier = new TabIdentifier(); // Use the same tab identifier as the tab manager
 
     // Set up store subscription
     this.unsubscribe = store.subscribe(this.handleStateChange.bind(this));
@@ -35,6 +38,19 @@ export class StateTopicManager {
     browser.runtime.onMessage.addListener((message) => {
       if (message.type === 'modalResponse') {
         this.handleModalResponse(message);
+      }
+    });
+    
+    // Set up tab event listeners to track tab counts
+    this.setupTabEventListeners();
+    
+    // Set up runtime message listeners for tab changes
+    browser.runtime.onMessage.addListener((message) => {
+      if (message.type === 'tabAssignmentsChanged' || 
+          message.type === 'tabVisibilityChanged' ||
+          message.type === 'tabAssigned' ||
+          message.type === 'topicTabsClosed') {
+        this.updateAllTabCounts();
       }
     });
   }
@@ -97,6 +113,366 @@ export class StateTopicManager {
     
     this.elements.topicsList.innerHTML = this.generateTopicsHTML(topics, activeTopicIndex);
     this.attachEventListeners(topics);
+    
+    // Update tab counts after rendering
+    this.updateAllTabCounts();
+  }
+  
+  /**
+   * Set up tab event listeners to keep track of tab counts
+   */
+  setupTabEventListeners() {
+    // Update tab counts initially
+    this.updateAllTabCounts();
+
+    // Listen for tab creation - needs immediate update
+    browser.tabs.onCreated.addListener(async (tab) => {
+      await this.updateAllTabCounts();
+    });
+
+    // Listen for tab removal - needs immediate update
+    browser.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+      await this.updateAllTabCounts();
+    });
+
+    // Listen for tab updates (URL changes)
+    browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+      if (changeInfo.url) {
+        await this.updateAllTabCounts();
+      }
+    });
+
+    // Listen for tab visibility changes - only if the API is available
+    try {
+      if (browser.tabs.onShown && browser.tabs.onHidden) {
+        browser.tabs.onShown.addListener(async (tabId, windowId) => {
+          console.log("Tab shown, updating tab counts");
+          await this.updateAllTabCounts();
+        });
+
+        browser.tabs.onHidden.addListener(async (tabId, windowId) => {
+          console.log("Tab hidden, updating tab counts");
+          await this.updateAllTabCounts();
+        });
+        console.log("Successfully added tab visibility event listeners");
+      } else {
+        console.log("Tab visibility events (onShown/onHidden) not available in this browser version");
+      }
+    } catch (err) {
+      console.warn("Could not set up tab visibility listeners:", err.message);
+    }
+
+    // Also update counts when we get a message from background
+    browser.runtime.onMessage.addListener(async (message) => {
+      if (message.type === 'tabsChanged' || message.type === 'topicChanged') {
+        await this.updateAllTabCounts();
+      }
+    });
+  }
+
+  /**
+   * Update tab counts for all topics
+   */
+  async updateAllTabCounts() {
+    try {
+      console.log("🔄 Updating tab counts...");
+      
+      // Try to get counts from tab manager first (most accurate)
+      if (this.tabManager) {
+        try {
+          await this.updateTabCountsFromTabManager();
+          console.log("✓ Used tab manager for counting");
+          return true;
+        } catch (err) {
+          console.warn("Could not use tab manager for counting, falling back to storage-based counting", err);
+        }
+      }
+      
+      // Fallback: Count from storage and browser tabs
+      
+      // Get all tabs directly from browser API
+      const allTabs = await browser.tabs.query({});
+      
+      // Get tab assignments from storage
+      const tabAssignments = await browser.storage.local.get('tabAssignments');
+      const stableIdToTopicMap = tabAssignments.tabAssignments || {};
+      
+      // Reset counts
+      this.tabCountMap.clear();
+      
+      // Initialize counts for all topics to zero
+      const topics = this.getTopics();
+      topics.forEach(topic => {
+        this.tabCountMap.set(topic.id, 0);
+      });
+
+      // Add an additional safety check - make sure all topics have an entry
+      Object.values(stableIdToTopicMap).forEach(topicId => {
+        if (!this.tabCountMap.has(topicId)) {
+          this.tabCountMap.set(topicId, 0);
+        }
+      });
+
+      // Track tabs by topic ID for more accurate counting
+      const tabsByTopic = new Map();
+      const processedStableIds = new Set(); // Track by stable ID instead of tab ID
+      
+      // First pass: catalog all tabs by their stable IDs
+      const tabStableIds = new Map(); // Map tab IDs to stable IDs
+      
+      for (const tab of allTabs) {
+        if (!this.isRegularTab(tab.url)) continue;
+        
+        try {
+          const stableId = await this.getStableTabId(tab);
+          tabStableIds.set(tab.id, stableId);
+        } catch (err) {
+          console.error(`Error getting stable ID for tab ${tab.id}:`, err);
+        }
+      }
+      
+      // Second pass: group tabs by topic and count them
+      for (const tab of allTabs) {
+        if (!this.isRegularTab(tab.url)) continue;
+        
+        try {
+          const stableId = tabStableIds.get(tab.id);
+          if (!stableId) continue;
+          
+          // Skip if we've already processed this stable ID
+          if (processedStableIds.has(stableId)) continue;
+          processedStableIds.add(stableId);
+          
+          // Get topic for this tab
+          const topicId = stableIdToTopicMap[stableId];
+          if (!topicId) continue;
+          
+          // Add to the topic's tab collection
+          if (!tabsByTopic.has(topicId)) {
+            tabsByTopic.set(topicId, new Set());
+          }
+          tabsByTopic.get(topicId).add(tab.id);
+        } catch (err) {
+          console.error(`Error processing tab ${tab.id}:`, err);
+        }
+      }
+      
+      // Third pass: count tabs per topic and update the map
+      let totalTabs = 0;
+      for (const [topicId, tabSet] of tabsByTopic.entries()) {
+        if (this.tabCountMap.has(topicId)) {
+          const count = tabSet.size;
+          this.tabCountMap.set(topicId, count);
+          totalTabs += count;
+          console.log(`Topic ${topicId}: ${count} tabs`);
+        }
+      }
+      
+      // Log total tabs counted
+      console.log(`Total tabs counted: ${totalTabs}`);
+      
+      // Update UI with the new counts
+      this.updateTabCountUI();
+      
+      console.log("✅ Tab count update completed using storage-based method");
+      return true;
+    } catch (error) {
+      console.error('❌ Error updating tab counts:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if a tab is a regular browsing tab
+   */
+  isRegularTab(url) {
+    return url && 
+           !url.startsWith("about:") && 
+           !url.startsWith("chrome:") && 
+           !url.startsWith("moz-extension:") &&
+           url !== "about:blank";
+  }
+
+  /**
+   * Get stable ID for a tab
+   */
+  async getStableTabId(tab) {
+    try {
+      // Use the TabIdentifier class to get the stable ID
+      return await this.tabIdentifier.getStableTabId(tab);
+    } catch (error) {
+      console.error('Error getting stable tab ID:', error);
+      return tab.url; // Fallback to using URL directly
+    }
+  }
+
+  /**
+   * Update the tab count UI without re-rendering the entire topic list
+   */
+  updateTabCountUI() {
+    if (!this.elements.topicsList) return;
+    
+    const topicItems = this.elements.topicsList.querySelectorAll('.topic-item');
+    
+    topicItems.forEach(item => {
+      const topicId = item.dataset.id;
+      const tabCountBadge = item.querySelector('.tab-count-badge');
+      
+      if (tabCountBadge && topicId) {
+        const count = this.tabCountMap.get(topicId) || 0;
+        tabCountBadge.textContent = `(${count})`;
+      }
+    });
+  }
+  
+  /**
+   * Set a reference to the tab manager for better coordination
+   */
+  setTabManager(tabManager) {
+    this.tabManager = tabManager;
+    
+    // Initial count using tab manager data
+    if (tabManager) {
+      this.updateTabCountsFromTabManager();
+    }
+  }
+  
+  /**
+   * Alternative method to count tabs using the tab manager directly
+   * This helps ensure consistency between what's shown and what's counted
+   */
+  async updateTabCountsFromTabManager() {
+    if (!this.tabManager) return false;
+    
+    try {
+      // Get all topics
+      const topics = this.getTopics();
+      
+      // Create a new count map to avoid partial updates
+      const newTabCountMap = new Map();
+      
+      // Initialize counts for all topics to zero
+      topics.forEach(topic => {
+        newTabCountMap.set(topic.id, 0);
+      });
+      
+      // Ask tab manager for tabs per topic (most accurate method)
+      const activeTopicId = this.getActiveTopicId();
+      
+      // Update active topic first for better perceived performance
+      if (activeTopicId) {
+        try {
+          const topicTabs = await this.tabManager.getTabsForTopic(activeTopicId);
+          newTabCountMap.set(activeTopicId, topicTabs.length);
+          
+          // Apply this immediately for better UX
+          this.tabCountMap.set(activeTopicId, topicTabs.length);
+          this.updateTabCountForTopic(activeTopicId);
+        } catch (err) {
+          console.warn(`Could not get tabs for active topic ${activeTopicId}:`, err);
+        }
+      }
+      
+      // Get counts for all other topics
+      for (const topic of topics) {
+        // Skip active topic as we've already counted it
+        if (topic.id === activeTopicId) continue;
+        
+        try {
+          const topicTabs = await this.tabManager.getTabsForTopic(topic.id);
+          newTabCountMap.set(topic.id, topicTabs.length);
+        } catch (err) {
+          console.warn(`Could not get tabs for topic ${topic.id}:`, err);
+        }
+      }
+      
+      // Update the complete map at once
+      this.tabCountMap = newTabCountMap;
+      
+      // Update UI for all topics
+      this.updateTabCountUI();
+      return true;
+    } catch (error) {
+      console.error('Error counting tabs from tab manager:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Update tab count for a specific topic in the UI
+   */
+  updateTabCountForTopic(topicId) {
+    if (!this.elements.topicsList) return;
+    
+    const topicItem = this.elements.topicsList.querySelector(`.topic-item[data-id="${topicId}"]`);
+    if (!topicItem) return;
+    
+    const tabCountBadge = topicItem.querySelector('.tab-count-badge');
+    if (tabCountBadge) {
+      const count = this.tabCountMap.get(topicId) || 0;
+      tabCountBadge.textContent = `(${count})`;
+    }
+  }
+  
+  /**
+   * Count tabs per topic from the stable ID to topic map
+   */
+  countTabsPerTopic(stableIdToTopicMap) {
+    const counts = new Map();
+    
+    // Count occurrences of each topic ID
+    for (const topicId of stableIdToTopicMap.values()) {
+      if (!counts.has(topicId)) {
+        counts.set(topicId, 0);
+      }
+      counts.set(topicId, counts.get(topicId) + 1);
+    }
+    
+    return counts;
+  }
+  
+  /**
+   * Get tabs for a topic if tab manager isn't available or doesn't have this method
+   */
+  async getTabsForTopic(topicId) {
+    try {
+      // If we have a tab manager, use it
+      if (this.tabManager && typeof this.tabManager.getTabsForTopic === 'function') {
+        return await this.tabManager.getTabsForTopic(topicId);
+      }
+      
+      // Otherwise, implement our own version
+      // Get all tabs from browser
+      const allTabs = await browser.tabs.query({});
+      
+      // Get tab assignments from storage
+      const tabAssignments = await browser.storage.local.get('tabAssignments');
+      const stableIdToTopicMap = tabAssignments.tabAssignments || {};
+      
+      // Find tabs for this topic
+      const topicTabs = [];
+      
+      for (const tab of allTabs) {
+        if (!this.isRegularTab(tab.url)) continue;
+        
+        try {
+          // Get stable ID for this tab
+          const stableId = await this.getStableTabId(tab);
+          
+          // Check if tab belongs to this topic
+          if (stableIdToTopicMap[stableId] === topicId) {
+            topicTabs.push(tab);
+          }
+        } catch (err) {
+          console.error(`Error checking tab ${tab.id} for topic:`, err);
+        }
+      }
+      
+      return topicTabs;
+    } catch (error) {
+      console.error(`Error getting tabs for topic ${topicId}:`, error);
+      return [];
+    }
   }
 
   /**
@@ -109,6 +485,7 @@ export class StateTopicManager {
 
     return topics.map((topic, index) => {
       const isSelected = index === activeTopicIndex;
+      const tabCount = this.tabCountMap.get(topic.id) || 0;
       
       return `
         <li class="topic-item ${isSelected ? 'selected' : ''}" 
@@ -117,7 +494,7 @@ export class StateTopicManager {
             draggable="true">
           <span class="topic-text">
             ${this.escapeHTML(topic.name)} 
-            <span class="tab-count-badge">(0)</span>
+            <span class="tab-count-badge">(${tabCount})</span>
           </span>
           <div class="topic-actions">
             <button class="edit-btn" title="Edit Topic">
@@ -193,8 +570,33 @@ export class StateTopicManager {
    */
   async handleTopicSelect(topicId) {
     try {
+      // Capture current active topic
+      const previousTopicId = this.getActiveTopicId();
+      
       // Update active topic in state
       store.dispatch(actions.setActiveTopic(topicId));
+      
+      // Immediately show UI feedback for better UX - update counts for both topics
+      // This will be refined later when the full count is updated
+      if (previousTopicId) {
+        // Previous topic likely has 0 visible tabs now
+        this.tabCountMap.set(previousTopicId, 0);
+        this.updateTabCountForTopic(previousTopicId);
+      }
+      
+      // For the new topic, immediately update count if we have tab manager
+      if (this.tabManager) {
+        try {
+          const topicTabs = await this.tabManager.getTabsForTopic(topicId);
+          this.tabCountMap.set(topicId, topicTabs.length);
+          this.updateTabCountForTopic(topicId);
+        } catch (err) {
+          // Silent fail, will be updated by the full count update
+        }
+      }
+      
+      // Update all tab counts for accuracy
+      this.updateAllTabCounts();
       
       // Notify callback if provided
       if (this.callbacks.onTopicSelect) {
@@ -398,11 +800,11 @@ export class StateTopicManager {
     browser.windows.create({
       url: modalUrl,
       type: 'popup',
-      width: 400,
-      height: 300,
+      width: 500,  // Increased from 400
+      height: 400, // Increased from 300
       allowScriptsToClose: true,
-      left: screen.width / 2 - 200,
-      top: screen.height / 2 - 150
+      left: screen.width / 2 - 250,  // Adjusted for new width
+      top: screen.height / 2 - 200   // Adjusted for new height
     }).catch(err => {
       console.error('Error opening modal:', err);
       showNotification('Failed to open add topic dialog', 'error');

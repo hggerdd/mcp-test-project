@@ -3,6 +3,7 @@
  * 
  * This manager handles Firefox tab operations and integrates with the state management system.
  * It tracks which tabs belong to which topics and controls their visibility.
+ * Uses stable tab identification that persists across browser restarts and page reloads.
  */
 
 import { 
@@ -11,10 +12,12 @@ import {
   selectors,
   showNotification
 } from '../../../index.js';
+import { TabIdentifier } from '../../../utils/tab-identifier.js';
 
 export class StateTabManager {
   constructor() {
-    this.tabToTopicMap = new Map(); // Maps tab IDs to topic IDs
+    this.stableIdToTopicMap = new Map(); // Maps stable tab IDs to topic IDs
+    this.tabIdentifier = new TabIdentifier(); // Tab identifier for stable IDs
     this.hasTabHideAPI = this.checkTabHideAPI();
     this.DEBUG = true;
     
@@ -87,6 +90,9 @@ export class StateTabManager {
     try {
       this.log("Initializing tab manager...");
       
+      // Load previously saved tab assignments
+      await this.loadTabAssignments();
+      
       // Get current state
       const state = store.getState();
       const topics = state.topics;
@@ -127,29 +133,30 @@ export class StateTabManager {
     this.log(`Assigning initial tabs to topics`);
     const assignedTabs = new Set();
     
-    // First, try to assign tabs based on URL to specific topics
-    // (This would require knowledge of which URLs belong to which topics)
-    // For now, we'll just assign all tabs to the active topic if there is one
-    
-    if (activeTopicId) {
-      regularTabs.forEach(tab => {
-        if (!this.tabToTopicMap.has(tab.id)) {
-          this.tabToTopicMap.set(tab.id, activeTopicId);
-          assignedTabs.add(tab.id);
-          this.log(`Assigned tab ${tab.id} to active topic ${activeTopicId}`);
+    // Process all regular tabs
+    for (const tab of regularTabs) {
+      // Generate a stable ID for the tab
+      const stableId = await this.tabIdentifier.getStableTabId(tab);
+      
+      // If this stable ID isn't assigned to any topic yet
+      if (!this.stableIdToTopicMap.has(stableId)) {
+        if (activeTopicId) {
+          // Assign to active topic
+          this.stableIdToTopicMap.set(stableId, activeTopicId);
+          assignedTabs.add(stableId);
+          this.log(`Assigned tab ${tab.id} (stable ID: ${stableId}) to active topic ${activeTopicId}`);
+        } else if (topics.length > 0) {
+          // If no active topic but we have topics, assign to first topic
+          const firstTopicId = topics[0].id;
+          this.stableIdToTopicMap.set(stableId, firstTopicId);
+          assignedTabs.add(stableId);
+          this.log(`Assigned tab ${tab.id} (stable ID: ${stableId}) to first topic ${firstTopicId}`);
         }
-      });
-    } else if (topics.length > 0) {
-      // If no active topic but we have topics, assign to first topic
-      const firstTopicId = topics[0].id;
-      regularTabs.forEach(tab => {
-        if (!this.tabToTopicMap.has(tab.id)) {
-          this.tabToTopicMap.set(tab.id, firstTopicId);
-          assignedTabs.add(tab.id);
-          this.log(`Assigned tab ${tab.id} to first topic ${firstTopicId}`);
-        }
-      });
+      }
     }
+    
+    // Persist the assignments
+    await this.persistTabAssignments();
     
     // Log summary of tab assignments
     this.logTabAssignments();
@@ -171,8 +178,12 @@ export class StateTabManager {
       const tabsToHide = [];
       
       // Categorize tabs
-      regularTabs.forEach(tab => {
-        const tabTopicId = this.tabToTopicMap.get(tab.id);
+      for (const tab of regularTabs) {
+        // Get the stable ID for this tab
+        const stableId = await this.tabIdentifier.getStableTabId(tab);
+        
+        // Get the topic ID assigned to this stable ID
+        const tabTopicId = this.stableIdToTopicMap.get(stableId);
         
         if (tabTopicId === activeTopicId) {
           if (tab.hidden) {
@@ -183,7 +194,7 @@ export class StateTabManager {
             tabsToHide.push(tab.id);
           }
         }
-      });
+      }
       
       // First hide tabs that should be hidden
       if (tabsToHide.length > 0) {
@@ -199,6 +210,20 @@ export class StateTabManager {
       
       // Verify the results
       await this.verifyTabVisibility(activeTopicId);
+      
+      // Notify that tab visibility has changed
+      if (tabsToShow.length > 0 || tabsToHide.length > 0) {
+        try {
+          browser.runtime.sendMessage({ 
+            type: 'tabVisibilityChanged',
+            activeTopicId,
+            tabsShown: tabsToShow.length,
+            tabsHidden: tabsToHide.length
+          });
+        } catch (error) {
+          this.log(`[WARNING] Could not send tab visibility change message: ${error.message}`);
+        }
+      }
       
     } catch (e) {
       this.log(`[ERROR] enforceTabVisibility failed: ${e.message}`);
@@ -222,13 +247,21 @@ export class StateTabManager {
       // Determine which tabs to hide/show
       const tabsToHide = [];
       const tabsToShow = [];
+      const currentTopicTabs = [];
       
       for (const tab of regularTabs) {
-        const tabTopicId = this.tabToTopicMap.get(tab.id);
+        // Get the stable ID for this tab
+        const stableId = await this.tabIdentifier.getStableTabId(tab);
+        
+        // Get the topic ID assigned to this stable ID
+        const tabTopicId = this.stableIdToTopicMap.get(stableId);
         
         // If tab belongs to new topic and is hidden, show it
-        if (tabTopicId === newTopicId && tab.hidden) {
-          tabsToShow.push(tab.id);
+        if (tabTopicId === newTopicId) {
+          currentTopicTabs.push(tab);
+          if (tab.hidden) {
+            tabsToShow.push(tab.id);
+          }
         } 
         // If tab doesn't belong to new topic and is visible, hide it
         else if (tabTopicId !== newTopicId && !tab.hidden) {
@@ -243,10 +276,6 @@ export class StateTabManager {
       }
       
       // Then show tabs for current topic
-      const currentTopicTabs = regularTabs.filter(tab => 
-        this.tabToTopicMap.get(tab.id) === newTopicId
-      );
-      
       if (tabsToShow.length > 0) {
         this.log(`Showing ${tabsToShow.length} tabs for new topic`);
         await browser.tabs.show(tabsToShow);
@@ -258,12 +287,38 @@ export class StateTabManager {
           this.log(`Activated tab ${tabToActivate}`);
         }
       } else if (currentTopicTabs.length === 0) {
-        // Create default tab if topic has no tabs
-        await this.createDefaultTab(newTopicId);
+        // ONLY Create default tab if topic has ZERO tabs
+        this.log(`Topic ${newTopicId} has no tabs visible, checking if it truly has no tabs...`);
+        
+        // Double check that this topic has no tabs at all before creating default
+        const allTopicTabs = await this.getTabsForTopic(newTopicId);
+        if (allTopicTabs.length === 0) {
+          this.log(`Confirmed topic ${newTopicId} has zero tabs, creating default tab`);
+          await this.createDefaultTab(newTopicId);
+        } else {
+          this.log(`Topic ${newTopicId} has ${allTopicTabs.length} tabs but none are visible, showing them`);
+          const tabIdsToShow = allTopicTabs.map(tab => tab.id);
+          await browser.tabs.show(tabIdsToShow);
+          
+          // Activate one of them
+          await browser.tabs.update(allTopicTabs[0].id, { active: true });
+        }
       }
       
       // Verify final state
       await this.verifyTabVisibility(newTopicId);
+      
+      // Notify that topic tabs have changed
+      try {
+        browser.runtime.sendMessage({ 
+          type: 'topicChanged',
+          topicId: newTopicId,
+          tabsShown: tabsToShow.length,
+          tabsHidden: tabsToHide.length
+        });
+      } catch (error) {
+        this.log(`[WARNING] Could not send topic change message: ${error.message}`);
+      }
       
       return true;
     } catch (e) {
@@ -278,15 +333,43 @@ export class StateTabManager {
    */
   async createDefaultTab(topicId) {
     try {
+      // Only create default tab if topic has zero tabs - double check
+      const allTabs = await browser.tabs.query({});
+      const tabsForThisTopic = [];
+      
+      for (const tab of allTabs) {
+        if (!this.isRegularTab(tab.url)) continue;
+        
+        const stableId = await this.tabIdentifier.getStableTabId(tab);
+        if (this.stableIdToTopicMap.get(stableId) === topicId) {
+          tabsForThisTopic.push(tab);
+        }
+      }
+      
+      // Don't create default tab if topic already has tabs
+      if (tabsForThisTopic.length > 0) {
+        this.log(`Topic ${topicId} already has ${tabsForThisTopic.length} tabs, skipping default tab creation`);
+        return null;
+      }
+      
       this.log(`Creating default tab for topic ${topicId}`);
+      
+      // Create a unique URL for each topic to prevent mixing up default tabs
+      // Adding a hash parameter with the topic ID ensures each topic gets a unique default tab
+      const defaultUrl = `https://www.google.de/#topicId=${topicId}`;
+      
       const newTab = await browser.tabs.create({
-        url: 'https://www.google.com',
+        url: defaultUrl,
         active: true
       });
       
-      // Assign to topic and keep visible
-      this.tabToTopicMap.set(newTab.id, topicId);
-      this.log(`Assigned new tab ${newTab.id} to topic ${topicId}`);
+      // Generate a stable ID and assign to topic
+      const stableId = await this.tabIdentifier.getStableTabId(newTab);
+      this.stableIdToTopicMap.set(stableId, topicId);
+      this.log(`Assigned new tab ${newTab.id} (stable ID: ${stableId}) to topic ${topicId}`);
+      
+      // Persist the assignments
+      await this.persistTabAssignments();
       
       return newTab.id;
     } catch (e) {
@@ -302,19 +385,44 @@ export class StateTabManager {
   async closeTabsForTopic(topicId) {
     try {
       // Find all tabs for this topic
-      const tabIdsToClose = [];
+      const allTabs = await browser.tabs.query({});
+      const tabsToClose = [];
+      const stableIdsToRemove = [];
       
-      for (const [tabId, mappedTopicId] of this.tabToTopicMap.entries()) {
-        if (mappedTopicId === topicId) {
-          tabIdsToClose.push(parseInt(tabId));
+      for (const tab of allTabs) {
+        if (!this.isRegularTab(tab.url)) continue;
+        
+        const stableId = await this.tabIdentifier.getStableTabId(tab);
+        if (this.stableIdToTopicMap.get(stableId) === topicId) {
+          tabsToClose.push(tab.id);
+          stableIdsToRemove.push(stableId);
         }
       }
       
-      if (tabIdsToClose.length > 0) {
-        this.log(`Closing ${tabIdsToClose.length} tabs for topic ${topicId}`);
-        await browser.tabs.remove(tabIdsToClose);
+      if (tabsToClose.length > 0) {
+        this.log(`Closing ${tabsToClose.length} tabs for topic ${topicId}`);
         
-        // Tab removal listener will handle cleanup of tabToTopicMap
+        // Remove topic assignments for these tabs
+        for (const stableId of stableIdsToRemove) {
+          this.stableIdToTopicMap.delete(stableId);
+        }
+        
+        // Persist assignments before closing tabs
+        await this.persistTabAssignments();
+        
+        // Close the tabs
+        await browser.tabs.remove(tabsToClose);
+        
+        // Notify that tabs were removed for this topic
+        try {
+          browser.runtime.sendMessage({ 
+            type: 'topicTabsClosed',
+            topicId,
+            tabCount: tabsToClose.length
+          });
+        } catch (error) {
+          this.log(`[WARNING] Could not send topic tabs closed message: ${error.message}`);
+        }
       }
       
       return true;
@@ -336,13 +444,31 @@ export class StateTabManager {
       // Get the active topic ID
       const activeTopicId = store.getState().activeTopicId;
       
+      // Generate a stable ID for this tab
+      const stableId = await this.tabIdentifier.getStableTabId(tab);
+      
       // Only assign tab to a topic if it's not already assigned
-      if (!this.tabToTopicMap.has(tab.id) && activeTopicId) {
-        this.log(`New tab created: ${tab.id} (${tab.url})`);
+      if (!this.stableIdToTopicMap.has(stableId) && activeTopicId) {
+        this.log(`New tab created: ${tab.id} (${tab.url}), stable ID: ${stableId}`);
         
         // Assign to active topic
-        this.tabToTopicMap.set(tab.id, activeTopicId);
-        this.log(`Assigned new tab ${tab.id} to active topic ${activeTopicId}`);
+        this.stableIdToTopicMap.set(stableId, activeTopicId);
+        this.log(`Assigned new tab with stable ID ${stableId} to active topic ${activeTopicId}`);
+        
+        // Persist the assignments
+        await this.persistTabAssignments();
+        
+        // Notify about the new tab assignment
+        try {
+          browser.runtime.sendMessage({ 
+            type: 'tabAssigned',
+            tabId: tab.id,
+            stableId,
+            topicId: activeTopicId
+          });
+        } catch (error) {
+          this.log(`[WARNING] Could not send tab assignment message: ${error.message}`);
+        }
         
         // Enforce visibility to ensure it matches topic
         await this.enforceTabVisibility(activeTopicId);
@@ -351,13 +477,25 @@ export class StateTabManager {
     
     // Tab removed
     browser.tabs.onRemoved.addListener(async (tabId) => {
-      // Check if this tab was mapped
-      if (this.tabToTopicMap.has(tabId)) {
-        const topicId = this.tabToTopicMap.get(tabId);
-        this.log(`Tab ${tabId} removed from topic ${topicId}`);
+      // We need to find and clean up any stable IDs that were mapped to this tab
+      const stableIdsToRemove = [];
+      
+      for (const stableId of this.tabIdentifier.stableIdToTabIdMap.keys()) {
+        if (this.tabIdentifier.stableIdToTabIdMap.get(stableId) === tabId) {
+          stableIdsToRemove.push(stableId);
+        }
+      }
+      
+      // Clean up mappings
+      for (const stableId of stableIdsToRemove) {
+        const topicId = this.stableIdToTopicMap.get(stableId);
+        this.log(`Tab ${tabId} with stable ID ${stableId} removed from topic ${topicId}`);
         
         // Remove from mapping
-        this.tabToTopicMap.delete(tabId);
+        this.tabIdentifier.clearTabMapping(tabId);
+        
+        // Note: We keep the stableIdToTopicMap intact so that if a tab with the same 
+        // stable ID is re-opened later, it will return to its original topic
       }
     });
     
@@ -366,16 +504,27 @@ export class StateTabManager {
       if (changeInfo.url && this.isRegularTab(changeInfo.url)) {
         this.log(`Tab URL updated: ${tabId} -> ${changeInfo.url}`);
         
-        // Get the active topic ID
-        const activeTopicId = store.getState().activeTopicId;
+        // Check if the URL change is significant enough to generate a new stable ID
+        const hasSignificantChange = await this.tabIdentifier.hasTabChangedSignificantly(tab);
         
-        // If tab doesn't have an assigned topic yet, assign it
-        if (!this.tabToTopicMap.has(tabId) && activeTopicId) {
-          this.tabToTopicMap.set(tabId, activeTopicId);
-          this.log(`Assigned updated tab ${tabId} to active topic ${activeTopicId}`);
+        if (hasSignificantChange) {
+          // Generate a new stable ID for this tab
+          const newStableId = await this.tabIdentifier.updateStableId(tab);
           
-          // Enforce visibility to ensure it matches topic
-          await this.enforceTabVisibility(activeTopicId);
+          // Get the active topic ID
+          const activeTopicId = store.getState().activeTopicId;
+          
+          // Assign to active topic if not already assigned
+          if (!this.stableIdToTopicMap.has(newStableId) && activeTopicId) {
+            this.stableIdToTopicMap.set(newStableId, activeTopicId);
+            this.log(`Assigned updated tab with new stable ID ${newStableId} to active topic ${activeTopicId}`);
+            
+            // Persist the assignments
+            await this.persistTabAssignments();
+            
+            // Enforce visibility to ensure it matches topic
+            await this.enforceTabVisibility(activeTopicId);
+          }
         }
       }
     });
@@ -395,20 +544,31 @@ export class StateTabManager {
       this.log(`Tab state: ${visibleTabs.length} visible, ${hiddenTabs.length} hidden`);
       
       // Check for incorrect visibility
-      const wrongVisibleTabs = visibleTabs.filter(tab => 
-        this.tabToTopicMap.get(tab.id) !== activeTopicId
-      );
+      const wrongVisibleTabs = [];
+      const wrongHiddenTabs = [];
       
-      const wrongHiddenTabs = hiddenTabs.filter(tab => 
-        this.tabToTopicMap.get(tab.id) === activeTopicId
-      );
-      
-      // Log visible tabs
-      visibleTabs.forEach(tab => {
-        const topic = this.tabToTopicMap.get(tab.id) || 'none';
+      // Check visible tabs
+      for (const tab of visibleTabs) {
+        const stableId = await this.tabIdentifier.getStableTabId(tab);
+        const topic = this.stableIdToTopicMap.get(stableId) || 'none';
         const isCorrect = topic === activeTopicId;
-        this.log(`Visible: Tab ${tab.id} in topic ${topic} (${isCorrect ? 'CORRECT' : 'WRONG'})`);
-      });
+        
+        this.log(`Visible: Tab ${tab.id} (stable ID: ${stableId}) in topic ${topic} (${isCorrect ? 'CORRECT' : 'WRONG'})`);
+        
+        if (!isCorrect) {
+          wrongVisibleTabs.push(tab);
+        }
+      }
+      
+      // Check hidden tabs
+      for (const tab of hiddenTabs) {
+        const stableId = await this.tabIdentifier.getStableTabId(tab);
+        const topic = this.stableIdToTopicMap.get(stableId);
+        
+        if (topic === activeTopicId) {
+          wrongHiddenTabs.push(tab);
+        }
+      }
       
       // Report errors
       if (wrongVisibleTabs.length > 0) {
@@ -447,17 +607,17 @@ export class StateTabManager {
     // Group tabs by topic
     const tabsByTopic = new Map();
     
-    for (const [tabId, topicId] of this.tabToTopicMap.entries()) {
+    for (const [stableId, topicId] of this.stableIdToTopicMap.entries()) {
       if (!tabsByTopic.has(topicId)) {
         tabsByTopic.set(topicId, []);
       }
-      tabsByTopic.get(topicId).push(tabId);
+      tabsByTopic.get(topicId).push(stableId);
     }
     
     // Log summary
     this.log(`Current tab assignments by topic:`);
-    for (const [topicId, tabIds] of tabsByTopic.entries()) {
-      this.log(`Topic ${topicId}: ${tabIds.length} tabs - IDs: ${tabIds.join(', ')}`);
+    for (const [topicId, stableIds] of tabsByTopic.entries()) {
+      this.log(`Topic ${topicId}: ${stableIds.length} tabs - Stable IDs: ${stableIds.join(', ')}`);
     }
   }
 
@@ -481,32 +641,23 @@ export class StateTabManager {
       
       // Ensure all regular tabs have a topic assignment
       for (const tab of regularTabs) {
-        if (!this.tabToTopicMap.has(tab.id)) {
-          this.log(`Assigning untracked tab ${tab.id} to active topic ${activeTopicId}`);
-          this.tabToTopicMap.set(tab.id, activeTopicId);
+        const stableId = await this.tabIdentifier.getStableTabId(tab);
+        
+        if (!this.stableIdToTopicMap.has(stableId)) {
+          this.log(`Assigning untracked tab ${tab.id} (stable ID: ${stableId}) to active topic ${activeTopicId}`);
+          this.stableIdToTopicMap.set(stableId, activeTopicId);
           changes++;
         }
       }
       
-      // Clean up stale tab references
-      const validTabIds = new Set(regularTabs.map(tab => tab.id));
-      const toDelete = [];
-      
-      for (const [tabId] of this.tabToTopicMap.entries()) {
-        if (!validTabIds.has(parseInt(tabId))) {
-          toDelete.push(tabId);
-          changes++;
-        }
-      }
-      
-      // Delete stale entries
-      for (const tabId of toDelete) {
-        this.log(`Removing stale tab ${tabId} from mapping`);
-        this.tabToTopicMap.delete(tabId);
-      }
+      // Clean up stale stable ID references
+      // Note: We keep stableIdToTopicMap entries even if the tab is closed, 
+      // as they may be needed if the tab is reopened later
       
       if (changes > 0) {
         this.log(`Made ${changes} changes to tab assignments`);
+        // Persist the assignments
+        await this.persistTabAssignments();
       } else {
         this.log(`Tab assignments are valid, no changes needed`);
       }
@@ -515,6 +666,75 @@ export class StateTabManager {
     } catch (e) {
       this.log(`[ERROR] validateTabAssignments failed: ${e.message}`);
       return false;
+    }
+  }
+  
+  /**
+   * Persist tab assignments to storage
+   * This allows tab assignments to survive extension restarts
+   */
+  async persistTabAssignments() {
+    try {
+      const assignments = Object.fromEntries(this.stableIdToTopicMap);
+      await browser.storage.local.set({ tabAssignments: assignments });
+      this.log('Tab assignments persisted to storage');
+      
+      // Send a message to notify other components that tab assignments have changed
+      try {
+        browser.runtime.sendMessage({ type: 'tabAssignmentsChanged' });
+      } catch (error) {
+        this.log(`[WARNING] Could not send tab assignments change message: ${error.message}`);
+      }
+      
+      return true;
+    } catch (e) {
+      this.log(`[ERROR] Failed to persist tab assignments: ${e.message}`);
+      return false;
+    }
+  }
+  
+  /**
+   * Load tab assignments from storage
+   */
+  async loadTabAssignments() {
+    try {
+      const data = await browser.storage.local.get('tabAssignments');
+      if (data && data.tabAssignments) {
+        this.stableIdToTopicMap = new Map(Object.entries(data.tabAssignments));
+        this.log(`Loaded ${this.stableIdToTopicMap.size} tab assignments from storage`);
+      }
+      return true;
+    } catch (e) {
+      this.log(`[ERROR] Failed to load tab assignments: ${e.message}`);
+      return false;
+    }
+  }
+
+/**
+ * Get all tabs for a specific topic
+ * 
+ * @param {string} topicId - Topic ID to get tabs for
+ * @returns {Promise<Array>} - Array of tab objects for the topic
+ */
+async getTabsForTopic(topicId) {
+    try {
+      const allTabs = await browser.tabs.query({});
+      const topicTabs = [];
+      
+      for (const tab of allTabs) {
+        if (!this.isRegularTab(tab.url)) continue;
+        
+        const stableId = await this.tabIdentifier.getStableTabId(tab);
+        if (this.stableIdToTopicMap.get(stableId) === topicId) {
+          topicTabs.push(tab);
+        }
+      }
+      
+      this.log(`Found ${topicTabs.length} tabs for topic ${topicId}`);
+      return topicTabs;
+    } catch (e) {
+      this.log(`[ERROR] getTabsForTopic failed: ${e.message}`);
+      return [];
     }
   }
 }

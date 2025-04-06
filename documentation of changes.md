@@ -317,3 +317,78 @@ async function handleTopicSelect(topicId) {
 - **Tagging-System**: Erweiterte Organisationsfunktionen
 - **Offline-Unterstützung**: Robuste Offline-Funktionalität
 - **Statistiken & Analysen**: Nutzungstrends und Erkenntnisse
+
+## Improved Tab Identification System (April 6, 2025)
+
+### Problem Solved
+The extension previously identified tabs using Firefox's internal tab ID, which changes when the browser is reloaded or sometimes even when pages are refreshed. This caused tabs to lose their topic assignments when the browser was restarted or when pages were reloaded, resulting in inconsistent workspace states.
+
+### Implementation Changes
+
+1. **Created a Robust Tab Identifier Class**
+   - Added `utils/tab-identifier.js` that generates stable IDs for tabs based on multiple factors:
+     - URL pattern (normalized to handle variable parts)
+     - Domain information
+     - Favicon data
+     - DOM structure fingerprinting for additional stability
+
+2. **Modified Tab Manager to Use Stable IDs**
+   - Updated `sidebar/js/state/tab-manager.js` to track tabs by stable IDs instead of Firefox tab IDs
+   - Added persistence of tab-to-topic mappings in local storage for durability across browser sessions
+   - Implemented robust tab identification that survives browser restarts and page reloads
+
+3. **Enhanced Tab State Management**
+   - Added detection of significant URL changes to handle page navigation
+   - Preserved topic assignments across browser sessions
+   - Improved handling of tab updates and removals
+
+### Benefits
+
+1. **Persistent Workspaces**
+   - Tab assignments now survive browser restarts
+   - Users can close and reopen Firefox while preserving their topic workspaces
+
+2. **More Reliable Navigation**
+   - Page reloads no longer cause tabs to lose their topic assignments
+   - Improved identification of tabs even when browser assigns new internal IDs
+
+3. **Optimized for Common Browsing Patterns**
+   - Handles URL parameters intelligently, filtering out session tokens and tracking IDs
+   - Preserves tab identity through redirects and domain changes when appropriate
+
+4. **Enhanced User Experience**
+   - More reliable workspace transitions
+   - No more "lost" tabs when restarting the browser
+   - Consistent topic organization across browsing sessions
+
+This implementation significantly improves the stability of the extension's tab management system while maintaining compatibility with the existing architecture.
+
+## Default Tab Duplication Fix
+
+### Problem
+When switching between topics, default Google tabs were being added multiple times if a topic's tabs weren't correctly visible, leading to an accumulation of Google tabs for each topic.
+
+### Solution
+1. Modified `createDefaultTab` to:
+   - Double-check that a topic truly has zero tabs before creating a default tab
+   - Use unique URLs for default tabs by adding a topic-specific hash parameter (`#topicId=TOPIC_ID`)
+   - Skip default tab creation if any existing tabs are found for the topic
+
+2. Modified `handleTopicChange` to:
+   - Verify topic has zero tabs before creating a default tab
+   - Added helper method `getTabsForTopic` to reliably find all tabs for a topic
+
+3. Updated `TabIdentifier` to:
+   - Recognize and preserve topic-specific hash parameters in the URL normalization process
+   - Ensure default tabs with the same base URL but different topic IDs get unique stable IDs
+
+### Benefits
+- Default Google tabs are only created when absolutely necessary (topic has zero tabs)
+- Each topic gets its own uniquely identifiable default tab
+- Default tabs are no longer mixed between topics
+- Prevents multiple default tabs accumulating when switching between topics
+
+### Implementation Details
+- Added special URL hash handling in tab identification to ensure uniqueness
+- Added dedicated helper method to count tabs per topic
+- Added double verification before creating default tabs

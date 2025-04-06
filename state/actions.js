@@ -232,6 +232,49 @@ export function resetState() {
   return createAction(ActionTypes.RESET_STATE);
 }
 
+// Bulk import actions
+/**
+ * Set multiple topics at once
+ * 
+ * @param {Array} topics - Array of topic objects
+ * @returns {object} Action object
+ */
+export function setTopics({ topics }) {
+  return createAction(ActionTypes.SET_TOPICS, { topics });
+}
+
+/**
+ * Set multiple categories for a topic
+ * 
+ * @param {string} topicId - Topic ID
+ * @param {Array} categories - Array of category objects
+ * @returns {object} Action object
+ */
+export function setCategories({ topicId, categories }) {
+  return createAction(ActionTypes.SET_CATEGORIES, { topicId, categories });
+}
+
+/**
+ * Set multiple bookmarks for a category
+ * 
+ * @param {string} categoryId - Category ID
+ * @param {Array} bookmarks - Array of bookmark objects
+ * @returns {object} Action object
+ */
+export function setBookmarks({ categoryId, bookmarks }) {
+  return createAction(ActionTypes.SET_BOOKMARKS, { categoryId, bookmarks });
+}
+
+/**
+ * Set multiple category sets at once
+ * 
+ * @param {Array} categorySets - Array of category set objects
+ * @returns {object} Action object
+ */
+export function setCategorySets({ categorySets }) {
+  return createAction(ActionTypes.SET_CATEGORY_SETS, { categorySets });
+}
+
 // Export all action creators
 export default {
   addTopic,
@@ -255,5 +298,10 @@ export default {
   toggleSidebarSection,
   
   persistState,
-  resetState
+  resetState,
+
+  setTopics,
+  setCategories,
+  setBookmarks,
+  setCategorySets
 };

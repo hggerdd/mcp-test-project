@@ -141,6 +141,9 @@ function setupCoordination() {
   topicManager.renderTopics();
   categoryManager.renderCategories();
   bookmarkManager.renderBookmarks();
+  
+  // Connect topic manager and tab manager for more accurate tab counting
+  topicManager.setTabManager(tabManager);
 }
 
 /**
@@ -310,6 +313,8 @@ async function handleImportData() {
           try {
             const content = e.target.result;
             const importData = JSON.parse(content);
+
+            console.log('Import data:', importData);
             
             // Validate import data
             if (!importData || !importData.data || !importData.version) {
